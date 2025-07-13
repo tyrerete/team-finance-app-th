@@ -11,15 +11,15 @@ import csv
 
 # ----------------- INITIALIZE APP & CONFIG -----------------
 app = Flask(__name__)
-app.secret_key = 'a-very-very-secret-key-for-the-final-version-with-percentage'
+app.secret_key = 'a-very-very-secret-key-for-the-final-version-with-notes'
 ADMIN_PASSWORD = "1111ab"
 
-# ----------------- NEW DATA STRUCTURE with Percentage -----------------
+# ----------------- NEW DATA STRUCTURE with Notes -----------------
 DB = {
     "members": {
-        "UserA": {"id": "UserA", "share_percentage": 40},
-        "UserB": {"id": "UserB", "share_percentage": 30},
-        "UserC": {"id": "UserC", "share_percentage": 30}
+        "UserA": {"id": "UserA", "share_percentage": 50},
+        "UserB": {"id": "UserB", "share_percentage": 25},
+        "UserC": {"id": "UserC", "share_percentage": 25}
     },
     "categories": {
         "income_sources": ["รายได้จาก Platform A", "รายได้จาก Platform B", "งานพิเศษ"],
@@ -29,6 +29,8 @@ DB = {
     "records": {
         "2025-07": {
             "locked": False,
+            "admin_note": "โน้ตลับเฉพาะแอดมิน",
+            "team_note": "เดือนนี้ทุกคนทำงานได้ดีมาก!",
             "rounds": {
                 "round1": {
                     "date": "2025-07-05",
@@ -93,7 +95,8 @@ def view_dashboard():
 
     month_data = DB['records'][selected_month]
     
-    # --- Calculation Logic with Percentage ---
+    # --- Calculation Logic (Split Income by %, Shared Expense by Equal) ---
+    member_count = len(DB["members"])
     total_income = sum(r['amount'] for rd in month_data['rounds'].values() for r in rd['income'])
     total_shared_expenses = sum(r['amount'] for rd in month_data['rounds'].values() for r in rd['shared_expenses'])
 
@@ -104,10 +107,11 @@ def view_dashboard():
     }
     
     breakdown_data = []
+    shared_expense_share_equal = total_shared_expenses / member_count if member_count > 0 else 0
+
     for name, member_data in DB["members"].items():
         percentage = member_data.get('share_percentage', 0)
         income_share = total_income * (percentage / 100)
-        shared_expense_share = total_shared_expenses * (percentage / 100)
         
         total_individual_expenses = 0
         all_individual_expenses = []
@@ -116,11 +120,11 @@ def view_dashboard():
             total_individual_expenses += sum(exp['amount'] for exp in expenses)
             all_individual_expenses.extend(expenses)
 
-        final_pay = income_share - shared_expense_share - total_individual_expenses
+        final_pay = income_share - shared_expense_share_equal - total_individual_expenses
         breakdown_data.append({
             "name": name,
             "income_share": income_share,
-            "shared_expense_share": shared_expense_share,
+            "shared_expense_share": shared_expense_share_equal,
             "individual_expenses_total": total_individual_expenses,
             "final_pay": final_pay,
             "individual_expenses_list": all_individual_expenses,
@@ -144,7 +148,7 @@ def add_month():
     month = request.form.get('month')
     new_month_key = f"{year}-{month.zfill(2)}"
     if new_month_key not in DB['records']:
-        DB['records'][new_month_key] = {"locked": False, "rounds": {}}
+        DB['records'][new_month_key] = {"locked": False, "admin_note": "", "team_note": "", "rounds": {}}
         flash(f'เพิ่มเดือน {new_month_key} เรียบร้อยแล้ว', 'success')
         return redirect(url_for('view_dashboard', month=new_month_key))
     else:
@@ -166,6 +170,16 @@ def toggle_lock_month(month):
         DB['records'][month]['locked'] = not DB['records'][month]['locked']
         status = "ล็อก" if DB['records'][month]['locked'] else "ปลดล็อก"
         flash(f'{status}การแก้ไขสำหรับเดือน {month} แล้ว', 'info')
+    return redirect(url_for('view_dashboard', month=month))
+
+# --- Note Management ---
+@app.route('/notes/save/<month>', methods=['POST'])
+@login_required
+def save_notes(month):
+    if month in DB['records']:
+        DB['records'][month]['admin_note'] = request.form.get('admin_note', '')
+        DB['records'][month]['team_note'] = request.form.get('team_note', '')
+        flash('บันทึก Note เรียบร้อยแล้ว', 'success')
     return redirect(url_for('view_dashboard', month=month))
 
 # --- Round Management ---
@@ -215,16 +229,17 @@ def delete_record(month, round_id, type, id):
     return redirect(url_for('view_dashboard', month=month))
 
 # --- Member & Share Management ---
-@app.route('/member/add', methods=['POST'])
+@app.route('/member/add', methods=['GET'])
 @login_required
 def add_member():
-    name = request.form['name'].strip()
+    name = request.args.get('name', '').strip()
+    month = request.args.get('month')
     if name and name not in DB['members']:
         DB['members'][name] = {'id': name, 'share_percentage': 0}
         flash(f'เพิ่มสมาชิก "{name}" เรียบร้อย (ส่วนแบ่ง 0%) กรุณาไปที่ "จัดการสมาชิก" เพื่อตั้งค่าส่วนแบ่ง', 'success')
     else:
         flash(f'ไม่สามารถเพิ่ม "{name}" ได้ อาจมีชื่อซ้ำหรือเป็นค่าว่าง', 'danger')
-    return redirect(url_for('view_dashboard', month=request.args.get('month')))
+    return redirect(url_for('view_dashboard', month=month))
 
 @app.route('/member/delete/<name>')
 @login_required
@@ -306,9 +321,11 @@ def edit_category(type):
 @login_required
 def export_csv(month):
     month_data = DB['records'][month]
+    member_count = len(DB["members"])
     
     total_income = sum(r['amount'] for rd in month_data['rounds'].values() for r in rd['income'])
     total_shared = sum(r['amount'] for rd in month_data['rounds'].values() for r in rd['shared_expenses'])
+    shared_share_equal = total_shared / member_count if member_count > 0 else 0
 
     si = io.StringIO()
     cw = csv.writer(si)
@@ -317,7 +334,7 @@ def export_csv(month):
     cw.writerow([])
     cw.writerow(['ภาพรวม'])
     cw.writerow(['รายรับรวม', total_income])
-    cw.writerow(['ค่าใช้จ่ายรวม (หาร)', total_shared])
+    cw.writerow(['ค่าใช้จ่ายรวม (หารเท่ากัน)', total_shared])
     cw.writerow(['จำนวนสมาชิก', len(DB['members'])])
     cw.writerow([])
 
@@ -328,10 +345,9 @@ def export_csv(month):
     for name, member_data in DB['members'].items():
         percentage = member_data.get('share_percentage', 0)
         income_share = total_income * (percentage / 100)
-        shared_share = total_shared * (percentage / 100)
         individual_total = sum(r['amount'] for rd in month_data['rounds'].values() for r in rd['individual_expenses'] if r['member_id'] == name)
-        final_pay = income_share - shared_share - individual_total
-        row = [name, percentage, income_share, shared_share, individual_total, final_pay]
+        final_pay = income_share - shared_share_equal - individual_total
+        row = [name, percentage, income_share, shared_share_equal, individual_total, final_pay]
         cw.writerow(row)
     
     output = si.getvalue()
