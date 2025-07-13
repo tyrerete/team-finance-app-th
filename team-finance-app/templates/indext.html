@@ -1,0 +1,265 @@
+<!-- ===================================================================== -->
+<!-- ไฟล์ที่ 3: templates/index.html                                         -->
+<!-- (สร้างไฟล์นี้ในโฟลเดอร์ templates แล้ววางโค้ดนี้)                      -->
+<!-- ===================================================================== -->
+<!doctype html>
+<html lang="th" data-bs-theme="dark">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Team Finance Calculator</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <style>
+      body { padding-top: 2rem; padding-bottom: 2rem; }
+      .container { max-width: 1140px; }
+      .card { margin-bottom: 1.5rem; }
+      .summary-value { font-size: 1.5rem; font-weight: bold; }
+      .action-btn { font-size: 0.8rem; }
+      .round-card { border-left: 3px solid #0d6efd; }
+    </style>
+</head>
+<body>
+<main class="container">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+        <div><h1>Team Finance</h1><p class="lead">สรุปรายรับ-รายจ่ายของทีม</p></div>
+        <div>
+            {% if session.get('logged_in') %}
+                <span class="text-success me-3"><i class="bi bi-shield-check-fill"></i> Admin Mode</span>
+                <a href="{{ url_for('logout') }}" class="btn btn-sm btn-outline-warning">Logout</a>
+            {% else %}
+                <span class="text-warning me-3"><i class="bi bi-eye-fill"></i> View-Only Mode</span>
+                <a href="{{ url_for('login') }}" class="btn btn-sm btn-outline-success">Admin Login</a>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Month Selector -->
+    <div class="card">
+        <div class="card-body d-flex justify-content-between align-items-center flex-wrap gap-3">
+            <div class="d-flex align-items-center gap-2">
+                <form method="get" action="{{ url_for('view_dashboard') }}" class="d-flex align-items-center">
+                    <label for="month_select" class="form-label me-2 mb-0">เลือกเดือน:</label>
+                    <select class="form-select w-auto" id="month_select" name="month" onchange="this.form.submit()">
+                        {% for m in all_months %}<option value="{{ m }}" {% if m == current_month %}selected{% endif %}>{{ m }}</option>{% endfor %}
+                    </select>
+                </form>
+                {% if current_month and session.get('logged_in') %}
+                <a href="{{ url_for('delete_month', month=current_month) }}" class="btn btn-sm btn-outline-danger" onclick="return confirm('ยืนยันการลบข้อมูลเดือน {{ current_month }} ทั้งหมด?')"><i class="bi bi-trash-fill"></i></a>
+                {% endif %}
+            </div>
+            {% if session.get('logged_in') %}
+            <div>
+                <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#addMonthModal"><i class="bi bi-calendar-plus-fill"></i> เพิ่มเดือนใหม่</button>
+                <button class="btn btn-info" data-bs-toggle="modal" data-bs-target="#manageCategoriesModal"><i class="bi bi-tags-fill"></i> จัดการหมวดหมู่</button>
+                <button class="btn btn-secondary" data-bs-toggle="modal" data-bs-target="#manageMembersModal"><i class="bi bi-people-fill"></i> จัดการสมาชิก</button>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Flash Messages -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+            <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+              {{ message }}<button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+    
+    {% if current_month %}
+    <!-- Summary Section -->
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2 class="mb-0">ภาพรวมเดือน: {{ current_month }}</h2>
+        <div>
+            {% if session.get('logged_in') %}
+            <a href="{{ url_for('toggle_lock_month', month=current_month) }}" class="btn btn-{{ 'warning' if month_data.locked else 'secondary' }}">
+                <i class="bi bi-{{ 'lock-fill' if month_data.locked else 'unlock-fill' }}"></i> {{ 'ปลดล็อกการแก้ไข' if month_data.locked else 'ล็อกการแก้ไข' }}
+            </a>
+            {% endif %}
+            <a href="{{ url_for('export_csv', month=current_month) }}" class="btn btn-primary"><i class="bi bi-file-earmark-spreadsheet-fill"></i> Export to CSV</a>
+        </div>
+    </div>
+
+    <!-- Summary Cards -->
+    <div class="row text-center">
+        <div class="col-md-4"><div class="card bg-success-subtle text-success-emphasis"><div class="card-body"><h5 class="card-title">รายรับรวม</h5><p class="summary-value">฿ {{ "{:,.2f}".format(summary.total_income) }}</p></div></div></div>
+        <div class="col-md-4"><div class="card bg-danger-subtle text-danger-emphasis"><div class="card-body"><h5 class="card-title">ค่าใช้จ่ายรวม (หาร)</h5><p class="summary-value">฿ {{ "{:,.2f}".format(summary.total_shared_expenses) }}</p></div></div></div>
+        <div class="col-md-4"><div class="card bg-info-subtle text-info-emphasis"><div class="card-body"><h5 class="card-title">สมาชิกทีม</h5><p class="summary-value">{{ summary.member_count }} คน</p></div></div></div>
+    </div>
+
+    <!-- Member Breakdown Table -->
+    <div class="card">
+        <h5 class="card-header">สรุปยอดของแต่ละคน</h5>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th></th><th>สมาชิก</th><th class="text-end">ส่วนแบ่งรายได้ (+)</th><th class="text-end">หัก คชจ. กลาง (-)</th><th class="text-end">หัก คชจ. ส่วนตัว (-)</th><th class="text-end bg-primary-subtle">คงเหลือสุทธิ (=)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    {% for member in breakdown %}
+                        <tr>
+                            <td><button class="btn btn-sm btn-outline-secondary p-0 ps-1 pe-1" type="button" data-bs-toggle="collapse" data-bs-target="#collapse-{{ member.name|replace(' ', '-') }}"><i class="bi bi-plus-lg"></i></button></td>
+                            <td><strong>{{ member.name }}</strong></td>
+                            <td class="text-end text-success">+ {{ "{:,.2f}".format(member.income_share) }}</td>
+                            <td class="text-end text-danger">- {{ "{:,.2f}".format(member.shared_expense_share) }}</td>
+                            <td class="text-end text-danger">- {{ "{:,.2f}".format(member.individual_expenses_total) }}</td>
+                            <td class="text-end bg-primary-subtle"><strong>฿ {{ "{:,.2f}".format(member.final_pay) }}</strong></td>
+                        </tr>
+                        <tr class="collapse" id="collapse-{{ member.name|replace(' ', '-') }}">
+                            <td colspan="6">
+                                <div class="p-3 bg-dark-subtle rounded">
+                                    <h6>รายละเอียดของ {{ member.name }}:</h6>
+                                    <ul class="list-group">
+                                        <li class="list-group-item d-flex justify-content-between bg-success-subtle"><span>ส่วนแบ่งรายได้ (หารแล้ว)</span><span class="text-success-emphasis">+ {{ "{:,.2f}".format(member.income_share) }}</span></li>
+                                        <li class="list-group-item d-flex justify-content-between bg-danger-subtle"><span>ส่วนของค่าใช้จ่ายรวม (หาร)</span><span class="text-danger-emphasis">- {{ "{:,.2f}".format(member.shared_expense_share) }}</span></li>
+                                    </ul>
+                                    <h6 class="mt-3">ค่าใช้จ่ายส่วนตัว:</h6>
+                                    {% if member.individual_expenses_list %}<ul class="list-group">{% for exp in member.individual_expenses_list %}<li class="list-group-item d-flex justify-content-between"><span>{{ exp.item }}</span><span class="text-danger">- {{ "{:,.2f}".format(exp.amount) }}</span></li>{% endfor %}</ul>{% else %}<p class="text-muted">ไม่มี</p>{% endif %}
+                                </div>
+                            </td>
+                        </tr>
+                    {% else %}
+                        <tr><td colspan="6" class="text-center">ยังไม่มีสมาชิกในทีม</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Transaction Rounds Section -->
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h3 class="mb-0">รอบการจ่ายในเดือนนี้</h3>
+        {% if session.get('logged_in') and not month_data.locked %}
+        <button class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#addRoundModal"><i class="bi bi-plus-circle-fill"></i> เพิ่มรอบการจ่ายใหม่</button>
+        {% endif %}
+    </div>
+    <div class="accordion" id="roundsAccordion">
+        {% for round_id, round_data in month_data.rounds.items() %}
+        <div class="accordion-item">
+            <h2 class="accordion-header">
+                <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#collapse-round-{{ round_id }}">
+                    <strong>วันที่: {{ round_data.date }}</strong> - {{ round_data.description }}
+                </button>
+            </h2>
+            <div id="collapse-round-{{ round_id }}" class="accordion-collapse collapse show" data-bs-parent="#roundsAccordion">
+                <div class="accordion-body">
+                    {% if session.get('logged_in') and not month_data.locked %}
+                    <div class="d-flex justify-content-end mb-3">
+                        <a href="{{ url_for('delete_round', month=current_month, round_id=round_id) }}" class="btn btn-sm btn-danger" onclick="return confirm('ยืนยันการลบรอบการจ่ายนี้ทั้งหมด?')">ลบรอบนี้</a>
+                    </div>
+                    {% endif %}
+                    <!-- Add record forms -->
+                    {% if session.get('logged_in') and not month_data.locked %}
+                    <div class="card mb-4"><div class="card-body">
+                        <h5 class="card-title">เพิ่มรายการในรอบนี้</h5>
+                        <ul class="nav nav-tabs" role="tablist">
+                            <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#income-{{round_id}}">รายรับ</button></li>
+                            <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#shared-{{round_id}}">คชจ. (หารรวม)</button></li>
+                            <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#indiv-{{round_id}}">คชจ. (ส่วนตัว)</button></li>
+                        </ul>
+                        <div class="tab-content pt-3">
+                            <div class="tab-pane fade show active" id="income-{{round_id}}">
+                                <form action="{{ url_for('add_record', month=current_month, round_id=round_id, type='income') }}" method="post">
+                                    <select class="form-select mb-2" name="source" required>{% for s in db.categories.income_sources %}<option value="{{s}}">{{s}}</option>{% endfor %}</select>
+                                    <input type="number" step="0.01" class="form-control mb-2" name="amount" placeholder="จำนวนเงิน" required>
+                                    <button type="submit" class="btn btn-success w-100">เพิ่มรายรับ</button>
+                                </form>
+                            </div>
+                            <div class="tab-pane fade" id="shared-{{round_id}}">
+                                <form action="{{ url_for('add_record', month=current_month, round_id=round_id, type='shared_expenses') }}" method="post">
+                                    <select class="form-select mb-2" name="item" required>{% for i in db.categories.shared_expense_items %}<option value="{{i}}">{{i}}</option>{% endfor %}</select>
+                                    <input type="number" step="0.01" class="form-control mb-2" name="amount" placeholder="จำนวนเงิน" required>
+                                    <button type="submit" class="btn btn-danger w-100">เพิ่ม คชจ. (หารรวม)</button>
+                                </form>
+                            </div>
+                            <div class="tab-pane fade" id="indiv-{{round_id}}">
+                                <form action="{{ url_for('add_record', month=current_month, round_id=round_id, type='individual_expenses') }}" method="post">
+                                    <select class="form-select mb-2" name="member_id" required>{% for name in db.members %}<option value="{{ name }}">{{ name }}</option>{% endfor %}</select>
+                                    <select class="form-select mb-2" name="item" required>{% for i in db.categories.individual_expense_items %}<option value="{{i}}">{{i}}</option>{% endfor %}</select>
+                                    <input type="number" step="0.01" class="form-control mb-2" name="amount" placeholder="จำนวนเงิน" required>
+                                    <button type="submit" class="btn btn-warning w-100">เพิ่ม คชจ. (ส่วนตัว)</button>
+                                </form>
+                            </div>
+                        </div>
+                    </div></div>
+                    {% endif %}
+                    <!-- Data tables -->
+                    <div class="row">
+                        <div class="col-md-4"><h5>รายรับ</h5><ul class="list-group">{% for item in round_data.income %}<li class="list-group-item d-flex justify-content-between"><span>{{item.source}}<br><small class="text-muted">฿{{ "{:,.2f}".format(item.amount) }}</small></span>{% if session.get('logged_in') and not month_data.locked %}<a href="{{url_for('delete_record', month=current_month, round_id=round_id, type='income', id=item.id)}}" class="btn btn-sm btn-outline-danger" onclick="return confirm('ลบ?')"><i class="bi bi-trash"></i></a>{% endif %}</li>{% else %}<li class="list-group-item text-muted">ไม่มี</li>{% endfor %}</ul></div>
+                        <div class="col-md-4"><h5>คชจ. (หารรวม)</h5><ul class="list-group">{% for item in round_data.shared_expenses %}<li class="list-group-item d-flex justify-content-between"><span>{{item.item}}<br><small class="text-muted">฿{{ "{:,.2f}".format(item.amount) }}</small></span>{% if session.get('logged_in') and not month_data.locked %}<a href="{{url_for('delete_record', month=current_month, round_id=round_id, type='shared_expenses', id=item.id)}}" class="btn btn-sm btn-outline-danger" onclick="return confirm('ลบ?')"><i class="bi bi-trash"></i></a>{% endif %}</li>{% else %}<li class="list-group-item text-muted">ไม่มี</li>{% endfor %}</ul></div>
+                        <div class="col-md-4"><h5>คชจ. (ส่วนตัว)</h5><ul class="list-group">{% for item in round_data.individual_expenses %}<li class="list-group-item d-flex justify-content-between"><span>{{item.item}} ({{item.member_id}})<br><small class="text-muted">฿{{ "{:,.2f}".format(item.amount) }}</small></span>{% if session.get('logged_in') and not month_data.locked %}<a href="{{url_for('delete_record', month=current_month, round_id=round_id, type='individual_expenses', id=item.id)}}" class="btn btn-sm btn-outline-danger" onclick="return confirm('ลบ?')"><i class="bi bi-trash"></i></a>{% endif %}</li>{% else %}<li class="list-group-item text-muted">ไม่มี</li>{% endfor %}</ul></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% else %}
+        <div class="text-center p-4 text-muted">ยังไม่มีรอบการจ่ายในเดือนนี้</div>
+        {% endfor %}
+    </div>
+
+    {% else %}
+    <div class="text-center p-5">
+        <h2>ยังไม่มีข้อมูล</h2>
+        <p>กรุณา Login และกดปุ่ม "เพิ่มเดือนใหม่" เพื่อเริ่มต้นใช้งาน</p>
+    </div>
+    {% endif %}
+
+    <!-- Modals -->
+    {% if session.get('logged_in') %}
+    <!-- Add Month Modal -->
+    <div class="modal fade" id="addMonthModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content">
+        <form action="{{ url_for('add_month') }}" method="post">
+            <div class="modal-header"><h5 class="modal-title">เพิ่มเดือนใหม่</h5></div>
+            <div class="modal-body">
+                <div class="row">
+                    <div class="col"><label class="form-label">ปี (ค.ศ.)</label><input type="number" name="year" class="form-control" value="{{ now.year }}" required></div>
+                    <div class="col"><label class="form-label">เดือน</label><input type="number" name="month" class="form-control" value="{{ now.month }}" min="1" max="12" required></div>
+                </div>
+            </div>
+            <div class="modal-footer"><button type="submit" class="btn btn-primary">สร้างเดือน</button></div>
+        </form>
+    </div></div></div>
+    <!-- Add Round Modal -->
+    <div class="modal fade" id="addRoundModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content">
+        <form action="{{ url_for('add_round', month=current_month) }}" method="post">
+            <div class="modal-header"><h5 class="modal-title">เพิ่มรอบการจ่ายใหม่</h5></div>
+            <div class="modal-body">
+                <div class="mb-3"><label class="form-label">วันที่</label><input type="date" name="date" class="form-control" required></div>
+                <div class="mb-3"><label class="form-label">คำอธิบายรอบ</label><input type="text" name="description" class="form-control" placeholder="เช่น เงินเข้ารอบแรก" required></div>
+            </div>
+            <div class="modal-footer"><button type="submit" class="btn btn-primary">สร้างรอบ</button></div>
+        </form>
+    </div></div></div>
+    <!-- Manage Categories Modal -->
+    <div class="modal fade" id="manageCategoriesModal" tabindex="-1"><div class="modal-dialog modal-lg"><div class="modal-content">
+        <div class="modal-header"><h5 class="modal-title">จัดการหมวดหมู่</h5></div>
+        <div class="modal-body"><div class="row">
+            <div class="col-md-4"><h6>แหล่งที่มาของรายรับ</h6><ul class="list-group mb-2">{% for cat in db.categories.income_sources %}<li class="list-group-item d-flex justify-content-between"><span>{{cat}}</span><a href="{{url_for('delete_category', type='income_sources', name=cat, month=current_month)}}" class="text-danger"><i class="bi bi-x-circle"></i></a></li>{% endfor %}</ul><form action="{{url_for('add_category', type='income_sources')}}" method="post" class="input-group"><input type="hidden" name="month" value="{{current_month}}"><input type="text" name="name" class="form-control" placeholder="เพิ่มใหม่" required><button type="submit" class="btn btn-success">+</button></form></div>
+            <div class="col-md-4"><h6>รายการ คชจ. (หารรวม)</h6><ul class="list-group mb-2">{% for cat in db.categories.shared_expense_items %}<li class="list-group-item d-flex justify-content-between"><span>{{cat}}</span><a href="{{url_for('delete_category', type='shared_expense_items', name=cat, month=current_month)}}" class="text-danger"><i class="bi bi-x-circle"></i></a></li>{% endfor %}</ul><form action="{{url_for('add_category', type='shared_expense_items')}}" method="post" class="input-group"><input type="hidden" name="month" value="{{current_month}}"><input type="text" name="name" class="form-control" placeholder="เพิ่มใหม่" required><button type="submit" class="btn btn-success">+</button></form></div>
+            <div class="col-md-4"><h6>รายการ คชจ. (ส่วนตัว)</h6><ul class="list-group mb-2">{% for cat in db.categories.individual_expense_items %}<li class="list-group-item d-flex justify-content-between"><span>{{cat}}</span><a href="{{url_for('delete_category', type='individual_expense_items', name=cat, month=current_month)}}" class="text-danger"><i class="bi bi-x-circle"></i></a></li>{% endfor %}</ul><form action="{{url_for('add_category', type='individual_expense_items')}}" method="post" class="input-group"><input type="hidden" name="month" value="{{current_month}}"><input type="text" name="name" class="form-control" placeholder="เพิ่มใหม่" required><button type="submit" class="btn btn-success">+</button></form></div>
+        </div></div>
+    </div></div></div>
+    <!-- Manage Members Modal -->
+    <div class="modal fade" id="manageMembersModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content">
+        <div class="modal-header"><h5 class="modal-title">จัดการสมาชิก</h5></div>
+        <div class="modal-body">
+            <ul class="list-group mb-3">{% for name in db.members %}<li class="list-group-item d-flex justify-content-between"><span>{{name}}</span><a href="{{ url_for('delete_member', name=name) }}" class="btn btn-sm btn-outline-danger" onclick="return confirm('ลบ {{ name }}?')"><i class="bi bi-trash"></i></a></li>{% endfor %}</ul>
+            <form action="{{ url_for('add_member') }}" method="post" class="input-group">
+                <input type="text" class="form-control" name="name" placeholder="ชื่อสมาชิกใหม่" required>
+                <button class="btn btn-primary" type="submit">เพิ่ม</button>
+            </form>
+        </div>
+    </div></div></div>
+    {% endif %}
+</main>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
