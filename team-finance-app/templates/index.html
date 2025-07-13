@@ -1,7 +1,3 @@
-<!-- ===================================================================== -->
-<!-- ไฟล์ที่ 3: templates/index.html                                         -->
-<!-- (สร้างไฟล์นี้ในโฟลเดอร์ templates แล้ววางโค้ดนี้)                      -->
-<!-- ===================================================================== -->
 <!doctype html>
 <html lang="th" data-bs-theme="dark">
 <head>
@@ -49,13 +45,16 @@
                 <a href="{{ url_for('delete_month', month=current_month) }}" class="btn btn-sm btn-outline-danger" onclick="return confirm('ยืนยันการลบข้อมูลเดือน {{ current_month }} ทั้งหมด?')"><i class="bi bi-trash-fill"></i></a>
                 {% endif %}
             </div>
-            {% if session.get('logged_in') %}
             <div>
+                {% if current_month %}
+                <button class="btn btn-warning" data-bs-toggle="modal" data-bs-target="#notesModal"><i class="bi bi-journal-text"></i> บันทึก/ดู Note</button>
+                {% endif %}
+                {% if session.get('logged_in') %}
                 <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#addMonthModal"><i class="bi bi-calendar-plus-fill"></i> เพิ่มเดือนใหม่</button>
                 <button class="btn btn-info" data-bs-toggle="modal" data-bs-target="#manageCategoriesModal"><i class="bi bi-tags-fill"></i> จัดการหมวดหมู่</button>
                 <button class="btn btn-secondary" data-bs-toggle="modal" data-bs-target="#manageMembersModal"><i class="bi bi-people-fill"></i> จัดการสมาชิก</button>
+                {% endif %}
             </div>
-            {% endif %}
         </div>
     </div>
 
@@ -87,7 +86,7 @@
     <!-- Summary Cards -->
     <div class="row text-center">
         <div class="col-md-4"><div class="card bg-success-subtle text-success-emphasis"><div class="card-body"><h5 class="card-title">รายรับรวม</h5><p class="summary-value">฿ {{ "{:,.2f}".format(summary.total_income) }}</p></div></div></div>
-        <div class="col-md-4"><div class="card bg-danger-subtle text-danger-emphasis"><div class="card-body"><h5 class="card-title">ค่าใช้จ่ายรวม (หารตาม % )</h5><p class="summary-value">฿ {{ "{:,.2f}".format(summary.total_shared_expenses) }}</p></div></div></div>
+        <div class="col-md-4"><div class="card bg-danger-subtle text-danger-emphasis"><div class="card-body"><h5 class="card-title">ค่าใช้จ่ายรวม (หารเท่ากัน)</h5><p class="summary-value">฿ {{ "{:,.2f}".format(summary.total_shared_expenses) }}</p></div></div></div>
         <div class="col-md-4"><div class="card bg-info-subtle text-info-emphasis"><div class="card-body"><h5 class="card-title">สมาชิกทีม</h5><p class="summary-value">{{ summary.member_count }} คน</p></div></div></div>
     </div>
 
@@ -99,7 +98,7 @@
                 <table class="table table-hover align-middle">
                     <thead class="table-light">
                         <tr>
-                            <th></th><th>สมาชิก (% ส่วนแบ่ง)</th><th class="text-end">ส่วนแบ่งรายได้ (+)</th><th class="text-end">หัก คชจ. กลาง (-)</th><th class="text-end">หัก คชจ. ส่วนตัว (-)</th><th class="text-end bg-primary-subtle">คงเหลือสุทธิ (=)</th>
+                            <th></th><th>สมาชิก (% ส่วนแบ่งรายรับ)</th><th class="text-end">ส่วนแบ่งรายได้ (+)</th><th class="text-end">หัก คชจ. กลาง (-)</th><th class="text-end">หัก คชจ. ส่วนตัว (-)</th><th class="text-end bg-primary-subtle">คงเหลือสุทธิ (=)</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -115,10 +114,10 @@
                         <tr class="collapse" id="collapse-{{ member.name|replace(' ', '-') }}">
                             <td colspan="6">
                                 <div class="p-3 bg-dark-subtle rounded">
-                                    <h6>รายละเอียดของ {{ member.name }} ({{ member.share_percentage }}%):</h6>
+                                    <h6>รายละเอียดของ {{ member.name }}:</h6>
                                     <ul class="list-group">
-                                        <li class="list-group-item d-flex justify-content-between bg-success-subtle"><span>ส่วนแบ่งรายได้</span><span class="text-success-emphasis">+ {{ "{:,.2f}".format(member.income_share) }}</span></li>
-                                        <li class="list-group-item d-flex justify-content-between bg-danger-subtle"><span>ส่วนของค่าใช้จ่ายรวม</span><span class="text-danger-emphasis">- {{ "{:,.2f}".format(member.shared_expense_share) }}</span></li>
+                                        <li class="list-group-item d-flex justify-content-between bg-success-subtle"><span>ส่วนแบ่งรายได้ ({{ member.share_percentage }}%)</span><span class="text-success-emphasis">+ {{ "{:,.2f}".format(member.income_share) }}</span></li>
+                                        <li class="list-group-item d-flex justify-content-between bg-danger-subtle"><span>ส่วนของค่าใช้จ่ายรวม (หารเท่ากัน)</span><span class="text-danger-emphasis">- {{ "{:,.2f}".format(member.shared_expense_share) }}</span></li>
                                     </ul>
                                     <h6 class="mt-3">ค่าใช้จ่ายส่วนตัว:</h6>
                                     {% if member.individual_expenses_list %}<ul class="list-group">{% for exp in member.individual_expenses_list %}<li class="list-group-item d-flex justify-content-between"><span>{{ exp.item }}</span><span class="text-danger">- {{ "{:,.2f}".format(exp.amount) }}</span></li>{% endfor %}</ul>{% else %}<p class="text-muted">ไม่มี</p>{% endif %}
@@ -238,6 +237,36 @@
             <div class="modal-footer"><button type="submit" class="btn btn-primary">สร้างรอบ</button></div>
         </form>
     </div></div></div>
+    <!-- Notes Modal -->
+    <div class="modal fade" id="notesModal" tabindex="-1"><div class="modal-dialog modal-lg"><div class="modal-content">
+        <form action="{{ url_for('save_notes', month=current_month) }}" method="post">
+            <div class="modal-header"><h5 class="modal-title">บันทึกสำหรับเดือน {{ current_month }}</h5></div>
+            <div class="modal-body">
+                {% if session.get('logged_in') %}
+                <div class="mb-3">
+                    <label for="admin_note" class="form-label fw-bold"><i class="bi bi-shield-lock-fill"></i> Admin Note (เห็นเฉพาะผู้ดูแล)</label>
+                    <textarea class="form-control" id="admin_note" name="admin_note" rows="5">{{ month_data.admin_note }}</textarea>
+                </div>
+                <hr>
+                <div class="mb-3">
+                    <label for="team_note" class="form-label fw-bold"><i class="bi bi-people-fill"></i> Team Note (เห็นทุกคน)</label>
+                    <textarea class="form-control" id="team_note" name="team_note" rows="5">{{ month_data.team_note }}</textarea>
+                </div>
+                {% else %}
+                <h6><i class="bi bi-people-fill"></i> Team Note</h6>
+                <div class="p-3 bg-body-tertiary rounded">
+                    {% if month_data.team_note %}{{ month_data.team_note | nl2br | safe }}{% else %}<span class="text-muted">ไม่มีบันทึกสำหรับทีมในเดือนนี้</span>{% endif %}
+                </div>
+                {% endif %}
+            </div>
+            {% if session.get('logged_in') %}
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">ปิด</button>
+                <button type="submit" class="btn btn-primary">บันทึก Note</button>
+            </div>
+            {% endif %}
+        </form>
+    </div></div></div>
     <!-- Manage Categories Modal -->
     <div class="modal fade" id="manageCategoriesModal" tabindex="-1"><div class="modal-dialog modal-lg"><div class="modal-content">
         <div class="modal-header"><h5 class="modal-title">จัดการหมวดหมู่</h5></div>
@@ -264,7 +293,7 @@
         <form action="{{ url_for('update_member_shares') }}" method="post">
             <div class="modal-header"><h5 class="modal-title">จัดการสมาชิกและส่วนแบ่ง</h5></div>
             <div class="modal-body">
-                <h6>กำหนดส่วนแบ่ง (รวมต้องได้ 100%)</h6>
+                <h6>กำหนดส่วนแบ่งรายรับ (รวมต้องได้ 100%)</h6>
                 <div id="share-inputs">
                     {% for name, data in db.members.items() %}
                     <div class="input-group mb-2">
