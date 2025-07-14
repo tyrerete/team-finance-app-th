@@ -1,98 +1,68 @@
 # =====================================================================
-# ไฟล์ที่ 1: app.py (เวอร์ชันใหม่พร้อมฐานข้อมูล SQLite และรองรับ Render Disk)
+# ไฟล์ที่ 1: app.py (เวอร์ชันใหม่พร้อมฐานข้อมูล MongoDB)
 # (วางโค้ดนี้ทับไฟล์ app.py เดิม)
 # =====================================================================
 import uuid
-import sqlite3
 import json
-import os # <-- เพิ่มเข้ามา
+import os
 from flask import Flask, render_template, request, redirect, url_for, flash, session, Response
 from datetime import datetime
 import functools
 import io
 import csv
+from pymongo import MongoClient
 
 # ----------------- INITIALIZE APP & CONFIG -----------------
 app = Flask(__name__)
-app.secret_key = 'a-very-very-secret-key-for-the-final-version-with-database'
+app.secret_key = 'a-very-very-secret-key-for-the-final-version-with-mongodb'
 ADMIN_PASSWORD = "1111ab"
 
-# --- NEW: Define database path based on environment ---
-# On Render, this will point to the persistent disk at /var/data/database.db
-# Locally, it will just be database.db in the same folder.
-RENDER_DISK_PATH = '/var/data'
-DATABASE_FILE = os.path.join(RENDER_DISK_PATH, 'database.db') if os.path.exists(RENDER_DISK_PATH) else 'database.db'
-
+# ----------------- MONGODB CONNECTION -----------------
+# Load the connection string from environment variables set on Render
+MONGO_URI = os.environ.get('MONGO_URI')
+client = MongoClient(MONGO_URI)
+db = client.team_finance_db # You can name your database anything
+data_collection = db.data_store # The collection to store our single document
 
 # ----------------- DATABASE FUNCTIONS -----------------
 
-def get_db():
-    """Opens a new database connection if there is none yet for the current application context."""
-    db = sqlite3.connect(DATABASE_FILE)
-    db.row_factory = sqlite3.Row
-    return db
-
 def init_db():
-    """Initializes the database schema and default data if it doesn't exist."""
-    with app.app_context():
-        db = get_db()
-        cursor = db.cursor()
-        # Use a single key-value table to store our main data structure as JSON
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS data_store (
-                key TEXT PRIMARY KEY,
-                value TEXT NOT NULL
-            )
-        ''')
-        
-        # Check if default data exists, if not, insert it
-        cursor.execute("SELECT key FROM data_store WHERE key = 'main_db'")
-        if cursor.fetchone() is None:
-            # This is the initial data structure when the app is first run
-            initial_db_state = {
-                "members": {
-                    "UserA": {"id": "UserA", "share_percentage": 50},
-                    "UserB": {"id": "UserB", "share_percentage": 25},
-                    "UserC": {"id": "UserC", "share_percentage": 25}
-                },
-                "categories": {
-                    "income_sources": ["รายได้จาก Platform A", "รายได้จาก Platform B", "งานพิเศษ"],
-                    "shared_expense_items": ["ค่า Photoshop", "ค่า Gemini API", "ค่าเช่าออฟฟิศ"],
-                    "individual_expense_items": ["ซื้อปากกา Stylus", "ค่าเดินทาง", "ค่าอาหารส่วนตัว"]
-                },
-                "records": {
-                    "2025-07": {
-                        "locked": False,
-                        "admin_note": "นี่คือโน้ตเริ่มต้นสำหรับแอดมิน",
-                        "team_note": "นี่คือโน้ตเริ่มต้นสำหรับทีม",
-                        "rounds": {}
-                    }
+    """Initializes the database with default data if it's empty."""
+    if data_collection.count_documents({}) == 0:
+        initial_db_state = {
+            "_id": "main_db", # Use a fixed ID for our single document
+            "members": {
+                "UserA": {"id": "UserA", "share_percentage": 50},
+                "UserB": {"id": "UserB", "share_percentage": 25},
+                "UserC": {"id": "UserC", "share_percentage": 25}
+            },
+            "categories": {
+                "income_sources": ["รายได้จาก Platform A", "รายได้จาก Platform B", "งานพิเศษ"],
+                "shared_expense_items": ["ค่า Photoshop", "ค่า Gemini API", "ค่าเช่าออฟฟิศ"],
+                "individual_expense_items": ["ซื้อปากกา Stylus", "ค่าเดินทาง", "ค่าอาหารส่วนตัว"]
+            },
+            "records": {
+                "2025-07": {
+                    "locked": False,
+                    "admin_note": "นี่คือโน้ตเริ่มต้นสำหรับแอดมิน",
+                    "team_note": "นี่คือโน้ตเริ่มต้นสำหรับทีม",
+                    "rounds": {}
                 }
             }
-            db_json = json.dumps(initial_db_state)
-            cursor.execute("INSERT INTO data_store (key, value) VALUES (?, ?)", ('main_db', db_json))
-            db.commit()
-        db.close()
+        }
+        data_collection.insert_one(initial_db_state)
 
 def load_db_data():
-    """Loads the main data structure from the database."""
-    db = get_db()
-    cursor = db.cursor()
-    cursor.execute("SELECT value FROM data_store WHERE key = 'main_db'")
-    row = cursor.fetchone()
-    db.close()
-    if row:
-        return json.loads(row['value'])
-    return {} # Should not happen after init_db
+    """Loads the main data structure from MongoDB."""
+    data = data_collection.find_one({"_id": "main_db"})
+    if not data:
+        init_db()
+        data = data_collection.find_one({"_id": "main_db"})
+    return data
 
 def save_db_data(data):
-    """Saves the main data structure to the database."""
-    db = get_db()
-    cursor = db.cursor()
-    db_json = json.dumps(data)
-    cursor.execute("INSERT OR REPLACE INTO data_store (key, value) VALUES (?, ?)", ('main_db', db_json))
-    db.commit()
-    db.close()
+    """Saves the main data structure to MongoDB."""
+    data_collection.replace_one({"_id": "main_db"}, data, upsert=True)
 
 # Initialize the database when the app starts
 init_db()
@@ -112,7 +82,7 @@ def login_required(view):
         return view(**kwargs)
     return wrapped_view
 
-# ----------------- BACKEND ROUTES -----------------
+# ----------------- BACKEND ROUTES (Now use load/save functions) -----------------
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -197,6 +167,8 @@ def view_dashboard():
                            now=now,
                            all_income_records=all_income_records,
                            all_shared_expense_records=all_shared_expense_records)
+
+# --- All other routes now need to load and save data ---
 
 @app.route('/month/add', methods=['POST'])
 @login_required
