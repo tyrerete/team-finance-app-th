@@ -134,7 +134,7 @@
                                                 {% for item in all_shared_expense_records %}
                                                 <li class="list-group-item d-flex justify-content-between">
                                                     <span>{{ item.item }}</span>
-                                                    <span class="text-danger-emphasis">- {{ "{:,.2f}".format(item.amount / summary.member_count) }}</span>
+                                                    <span class="text-danger-emphasis">- {{ "{:,.2f}".format(item.amount / summary.member_count) if summary.member_count > 0 else 0 }}</span>
                                                 </li>
                                                 {% endfor %}
                                             </ul>
