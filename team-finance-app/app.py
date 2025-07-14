@@ -1,10 +1,11 @@
 # =====================================================================
-# ไฟล์ที่ 1: app.py (เวอร์ชันใหม่พร้อมฐานข้อมูล SQLite)
+# ไฟล์ที่ 1: app.py (เวอร์ชันใหม่พร้อมฐานข้อมูล SQLite และรองรับ Render Disk)
 # (วางโค้ดนี้ทับไฟล์ app.py เดิม)
 # =====================================================================
 import uuid
 import sqlite3
 import json
+import os # <-- เพิ่มเข้ามา
 from flask import Flask, render_template, request, redirect, url_for, flash, session, Response
 from datetime import datetime
 import functools
@@ -15,7 +16,13 @@ import csv
 app = Flask(__name__)
 app.secret_key = 'a-very-very-secret-key-for-the-final-version-with-database'
 ADMIN_PASSWORD = "1111ab"
-DATABASE_FILE = 'database.db'
+
+# --- NEW: Define database path based on environment ---
+# On Render, this will point to the persistent disk at /var/data/database.db
+# Locally, it will just be database.db in the same folder.
+RENDER_DISK_PATH = '/var/data'
+DATABASE_FILE = os.path.join(RENDER_DISK_PATH, 'database.db') if os.path.exists(RENDER_DISK_PATH) else 'database.db'
+
 
 # ----------------- DATABASE FUNCTIONS -----------------
 
@@ -136,18 +143,18 @@ def view_dashboard():
     selected_month = request.args.get('month', get_latest_month(DB))
     now = datetime.now()
 
-    if not selected_month or selected_month not in DB['records']:
+    if not selected_month or selected_month not in DB.get('records', {}):
         flash('ยังไม่มีข้อมูลเดือน กรุณาเพิ่มเดือนใหม่', 'info')
         return render_template('index.html', db=DB, current_month=None, all_months=sorted(DB.get('records', {}).keys(), reverse=True), now=now)
 
     month_data = DB['records'][selected_month]
     
     member_count = len(DB["members"])
-    total_income = sum(r['amount'] for rd in month_data['rounds'].values() for r in rd['income'])
-    total_shared_expenses = sum(r['amount'] for rd in month_data['rounds'].values() for r in rd['shared_expenses'])
+    total_income = sum(r['amount'] for rd in month_data.get('rounds', {}).values() for r in rd.get('income', []))
+    total_shared_expenses = sum(r['amount'] for rd in month_data.get('rounds', {}).values() for r in rd.get('shared_expenses', []))
 
-    all_income_records = [item for rd in month_data['rounds'].values() for item in rd['income']]
-    all_shared_expense_records = [item for rd in month_data['rounds'].values() for item in rd['shared_expenses']]
+    all_income_records = [item for rd in month_data.get('rounds', {}).values() for item in rd.get('income', [])]
+    all_shared_expense_records = [item for rd in month_data.get('rounds', {}).values() for item in rd.get('shared_expenses', [])]
 
     summary_data = {
         "total_income": total_income,
@@ -164,8 +171,8 @@ def view_dashboard():
         
         total_individual_expenses = 0
         all_individual_expenses = []
-        for round_data in month_data['rounds'].values():
-            expenses = [exp for exp in round_data['individual_expenses'] if exp['member_id'] == name]
+        for round_data in month_data.get('rounds', {}).values():
+            expenses = [exp for exp in round_data.get('individual_expenses', []) if exp.get('member_id') == name]
             total_individual_expenses += sum(exp['amount'] for exp in expenses)
             all_individual_expenses.extend(expenses)
 
